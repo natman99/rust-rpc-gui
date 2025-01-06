@@ -1,4 +1,8 @@
-use eframe::{egui::CentralPanel, App, NativeOptions};
+use core::panic;
+use std::str::FromStr;
+
+use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
+use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 //use egui::frame;
 
 #[derive(Default)]
@@ -13,38 +17,79 @@ impl App for Rpc{
             if ui.button("Hello there").clicked() {
                 println!("button clicked");
             }
+        
+            let _response= client_buttons(ui, self);
             
-            
-            ui.text_edit_singleline(&mut self.state.t);
+            token_widget(ui, self);
             
             //ui_counter(ui, );
         });
     }
 }
 
-// fn ui_counter(ui: &mut egui::Ui, counter: &mut i32) {
-//     // Put the buttons and label on the same row:
-//     ui.horizontal(|ui| {
-//         if ui.button("-").clicked() {
-//             *counter -= 1;
-//         }
-//         ui.label(counter.to_string());
-//         if ui.button("+").clicked() {
-//             *counter += 1;
-//         }
-//     });
-// }
+fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
+
+    ui.horizontal(|ui|{
+        if ui.button(RichText::new("Start").color(Color32::DARK_BLUE)).clicked() {
+            start_client(rpc);
+        };
+    
+        if ui.button(RichText::new("Stop").color(Color32::DARK_RED)).clicked() {
+            todo!("u fool")
+        };
+    });
+
+    
+}
+
+fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
+
+    match rpc.state.status {
+        Status::Disconnected => ui.text_edit_singleline(&mut rpc.state.token),
+        Status::Error { error: ErrorType::MissingToken } => ui.text_edit_singleline(&mut rpc.state.token).highlight(),
+        _ => ui.text_edit_singleline(&mut rpc.state.token)
+
+    }
+
+    //ui.text_edit_singleline(&mut rpc.state.token).on_hover_cursor(CursorIcon::NotAllowed);
+
+}
+    
+
+
+
+fn start_client(rpc: &mut Rpc){
+    match rpc.state.status {
+        Status::Disconnected => {
+            let client = DiscordIpcClient::new(&rpc.state.token);
+            if &rpc.state.token == "".to_string().trim(){
+                rpc.state.status = Status::Error { error : ErrorType::MissingToken };
+            };
+            let mut client: DiscordIpcClient = match client {
+                Ok(client) => client,
+                Err(_error) => {
+                    rpc.state.status = Status::Error { error : ErrorType::MissingToken };
+                    panic!("token brokey")
+                }
+            };
+            
+        },
+        _ => todo!(),
+        
+    }
+}
+
 
 struct State {
-    t: String,
-    status: Status
+    token: String,
+    status: Status,
 }
 
 impl Default for State{
     fn default() -> Self {
         Self {
-        t: String::new(),
-        status: Status::Disconnected
+        token: String::new(),
+        status: Status::Disconnected,
         }
     }
 }
@@ -52,19 +97,24 @@ impl Default for State{
 impl State {
     pub fn _new() -> Self {
         Self {
-            t: String::new(),
+            token: String::from_str("token here").unwrap(),
             status: Status::Disconnected,
         }
     }
 }
 
 enum Status{
-    Connected,
+    Connected { client: DiscordIpcClient },
     Disconnected,
     Connecting,
-    Error
+    Error { error: ErrorType},
 }
 
+enum ErrorType {
+    MissingToken,
+    Unkown,
+    None
+}
 
 impl Rpc {
     fn new(_cc: &eframe::CreationContext<'_>) -> Self {
