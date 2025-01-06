@@ -1,8 +1,9 @@
 use core::panic;
-use std::str::FromStr;
+use std::{error::Error, iter::Skip, str::FromStr};
 
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
+
 //use egui::frame;
 
 #[derive(Default)]
@@ -31,7 +32,19 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
         if ui.button(RichText::new("Start").color(Color32::DARK_BLUE)).clicked() {
-            start_client(rpc);
+
+            if rpc.state.token.trim() == "" {
+                rpc.state.status = Status::Error { error: ErrorType::MissingToken };
+                return;
+            }
+
+            match start_client(rpc){
+                Ok(client) => {
+                    println!("starting client");
+                    rpc.state.status = Status::Connected { client }
+                },
+                Err(error) => rpc.state.status = Status::Error { error: ErrorType::Unkown }
+            }
         };
     
         if ui.button(RichText::new("Stop").color(Color32::DARK_RED)).clicked() {
@@ -58,25 +71,18 @@ fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
 
 
 
-fn start_client(rpc: &mut Rpc){
-    match rpc.state.status {
-        Status::Disconnected => {
-            let client = DiscordIpcClient::new(&rpc.state.token);
-            if &rpc.state.token == "".to_string().trim(){
-                rpc.state.status = Status::Error { error : ErrorType::MissingToken };
-            };
-            let mut client: DiscordIpcClient = match client {
-                Ok(client) => client,
-                Err(_error) => {
-                    rpc.state.status = Status::Error { error : ErrorType::MissingToken };
-                    panic!("token brokey")
-                }
-            };
-            
-        },
-        _ => todo!(),
-        
+fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::Error>> {
+
+    if &rpc.state.token == "".to_string().trim(){
+        rpc.state.status = Status::Error { error : ErrorType::MissingToken };
+    };
+    let client = DiscordIpcClient::new(&rpc.state.token);
+    match client {
+        Ok (client) => Ok(client),
+        Err(error) => Err(error)
     }
+        
+    
 }
 
 
@@ -102,14 +108,14 @@ impl State {
         }
     }
 }
-
+#[derive(Debug)]
 enum Status{
     Connected { client: DiscordIpcClient },
     Disconnected,
     Connecting,
     Error { error: ErrorType},
 }
-
+#[derive(Debug)]
 enum ErrorType {
     MissingToken,
     Unkown,
