@@ -39,21 +39,43 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
             }
 
             match start_client(rpc){
-                Ok(client) => {
+                Ok(mut client) => {
                     println!("starting client");
+                    match client.connect() {
+                        Ok(_) => (),
+                        Err(_) => { client.close(); ()}
+
+                    }
+
+                    client.set_activity(activity::Activity::new()
+                                .state("foo")
+                                .details("bar")
+                            ).expect("wow it broke");
                     rpc.state.status = Status::Connected { client }
+
+                    //rpc.state.status = Status::Connected { client }
                 },
-                Err(error) => rpc.state.status = Status::Error { error: ErrorType::Unkown }
+                
+                Err(_error) => rpc.state.status = Status::Error { error: ErrorType::Unkown }
             }
+            
         };
     
         if ui.button(RichText::new("Stop").color(Color32::DARK_RED)).clicked() {
-            todo!("u fool")
-        };
+            match &mut rpc.state.status {
+                Status::Connected { client } => {
+                    let _ = client.close();
+                    ()
+                },
+                _ => todo!()
+            } 
+            
+        }
     });
 
     
 }
+
 
 fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
 
@@ -76,7 +98,7 @@ fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::E
     if &rpc.state.token == "".to_string().trim(){
         rpc.state.status = Status::Error { error : ErrorType::MissingToken };
     };
-    let client = DiscordIpcClient::new(&rpc.state.token);
+    let mut client = DiscordIpcClient::new(&rpc.state.token);
     match client {
         Ok (client) => Ok(client),
         Err(error) => Err(error)
