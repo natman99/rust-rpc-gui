@@ -1,5 +1,5 @@
 use std::{str::FromStr};
-
+use std::thread;
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
 
@@ -102,17 +102,23 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
     
         if stop_button.clicked() {
             
-            match rpc.state.status {
-                Status::Connected { client} => {
-                    rpc.state.status = Status::Disconnecting;
+            match &mut rpc.state.status {
+                Status::Connected {   client} => {
+                    let handle = thread::spawn(||{
+                        match client.close(){
+                            Ok(_) => {
+                                rpc.state.status = Status::Disconnected;
+                                
+                                println!("Client closed")
+                            },
+                            Err(err) => panic!("{err}") 
+                        }
+                    });
                     
-                    match client.close(){
-                        Ok(_) => rpc.state.status = Status::Disconnected,
-                        Err(err) => panic!("{err}") 
-                    }
                     
                     
-                    ()
+                    
+                    
                 },
                 _ => ()//todo!("stop button")
             }
