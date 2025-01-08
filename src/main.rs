@@ -1,7 +1,7 @@
-use std::{str::FromStr};
 use std::thread;
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
 use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
+use egui::debug_text;
 
 //use egui::frame;
 
@@ -22,6 +22,8 @@ impl App for Rpc{
             
             token_widget(ui, self);
             
+            activity_type_widget(ui, self);
+
             //ui_counter(ui, );
         });
     }
@@ -46,7 +48,6 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
             _  => ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::DARK_RED)))
         };
 
-        
 
         if start_button.clicked() {
             //dbg!(&rpc.state.status);
@@ -83,9 +84,10 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                             client.set_activity(activity::Activity::new()
                                         .state("foo")
                                         .details("bar")
+                                        
                                     ).expect("wow it broke");
                             rpc.state.status = Status::Connected { client };
-                            println!("started client");
+                            println!("Started client");
                             //rpc.state.status = Status::Connected { client }
                         },
                         
@@ -104,21 +106,15 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
             
             match &mut rpc.state.status {
                 Status::Connected {   client} => {
-                    let handle = thread::spawn(||{
-                        match client.close(){
-                            Ok(_) => {
-                                rpc.state.status = Status::Disconnected;
-                                
-                                println!("Client closed")
-                            },
-                            Err(err) => panic!("{err}") 
-                        }
-                    });
                     
-                    
-                    
-                    
-                    
+                    match client.close(){
+                        Ok(_) => {
+                            rpc.state.status = Status::Disconnected;
+                            
+                            println!("Client closed");
+                        },
+                        Err(err) => panic!("{err}") 
+                    }
                 },
                 _ => ()//todo!("stop button")
             }
@@ -144,7 +140,34 @@ fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
 
 }
     
+fn activity_type_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
+    // let mut e = vec![false, false, false, false];
+   
+    // ui.horizontal(|ui| {
+    //     ui.checkbox(&mut e[0], "Playing");
+    //     ui.checkbox(&mut e[1], "Watching");
+    //     ui.checkbox(&mut e[2], "Listening");
+    //     ui.checkbox(&mut e[3], "Competing");
+    // });
 
+    // match e[..] {
+    //     [true, _] => rpc.state.activity_type = 0,
+    //     [false, true, false, false] => rpc.state.activity_type = 1,
+    //     _ => (),
+    // }
+    let mut a = Activities::Playing;
+    let mut b = Activities::Watching;
+    let mut selected = &mut rpc.state.activity_type;
+    egui::ComboBox::from_label("Select one!")
+    .selected_text(format!("{:?}", selected))
+    .show_ui(ui, |ui| {
+        ui.selectable_value(&mut selected, &mut a, "Playing");
+        ui.selectable_value(&mut selected,  &mut b, "Watching");
+        
+    }
+);
+   
+}
 
 
 fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::Error>> {
@@ -165,6 +188,7 @@ fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::E
 struct State {
     token: String,
     status: Status,
+    activity_type: Activities,
 }
 
 impl Default for State{
@@ -172,6 +196,7 @@ impl Default for State{
         Self {
         token: String::new(),
         status: Status::Disconnected,
+        activity_type : Activities::Watching,
         }
     }
 }
@@ -180,11 +205,18 @@ impl Default for State{
 impl State {
     pub fn _new() -> Self {
         Self {
-            token: String::from_str("token here").unwrap(),
+            token: String::from("token here"),
             status: Status::Disconnected,
+            activity_type: Activities::Watching,
         }
     }
 }
+#[derive(Debug, PartialEq)]
+enum Activities{
+    Playing, 
+    Watching
+}
+
 #[derive(Debug)]
 enum Status{
     Connected { client: DiscordIpcClient },
