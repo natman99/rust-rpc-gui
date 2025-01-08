@@ -1,7 +1,5 @@
-use std::thread;
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
-use discord_rich_presence::{activity, DiscordIpc, DiscordIpcClient};
-use egui::debug_text;
+use discord_rich_presence::{activity::{self, ActivityType}, DiscordIpc, DiscordIpcClient};
 
 //use egui::frame;
 
@@ -80,10 +78,19 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                                 Err(_) => { let _ = client.close(); ()}
         
                             }
+                            
+
+                            let chosen = match &rpc.state.activity_type {
+                                Activities::Playing => ActivityType::Playing,
+                                Activities::Listening => ActivityType::Listening,
+                                Activities::Watching => ActivityType::Watching,
+                                Activities::Competing => ActivityType::Competing
+                            };
         
                             client.set_activity(activity::Activity::new()
                                         .state("foo")
                                         .details("bar")
+                                        .activity_type(chosen)
                                         
                                     ).expect("wow it broke");
                             rpc.state.status = Status::Connected { client };
@@ -141,28 +148,13 @@ fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
 }
     
 fn activity_type_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
-    // let mut e = vec![false, false, false, false];
-   
-    // ui.horizontal(|ui| {
-    //     ui.checkbox(&mut e[0], "Playing");
-    //     ui.checkbox(&mut e[1], "Watching");
-    //     ui.checkbox(&mut e[2], "Listening");
-    //     ui.checkbox(&mut e[3], "Competing");
-    // });
-
-    // match e[..] {
-    //     [true, _] => rpc.state.activity_type = 0,
-    //     [false, true, false, false] => rpc.state.activity_type = 1,
-    //     _ => (),
-    // }
-    let mut a = Activities::Playing;
-    let mut b = Activities::Watching;
-    let mut selected = &mut rpc.state.activity_type;
-    egui::ComboBox::from_label("Select one!")
-    .selected_text(format!("{:?}", selected))
+    egui::ComboBox::from_label("Activity Type")
+    .selected_text(format!("{:?}", rpc.state.activity_type))
     .show_ui(ui, |ui| {
-        ui.selectable_value(&mut selected, &mut a, "Playing");
-        ui.selectable_value(&mut selected,  &mut b, "Watching");
+        ui.selectable_value(&mut rpc.state.activity_type, Activities::Playing, "Playing");
+        ui.selectable_value(&mut rpc.state.activity_type,  Activities::Listening, "Listening");
+        ui.selectable_value(&mut rpc.state.activity_type,  Activities::Watching, "Watching");
+        ui.selectable_value(&mut rpc.state.activity_type,  Activities::Competing, "Competing");
         
     }
 );
@@ -189,6 +181,8 @@ struct State {
     token: String,
     status: Status,
     activity_type: Activities,
+    state: String,
+    details: String
 }
 
 impl Default for State{
@@ -196,7 +190,9 @@ impl Default for State{
         Self {
         token: String::new(),
         status: Status::Disconnected,
-        activity_type : Activities::Watching,
+        activity_type : Activities::Playing,
+        state: String::new(),
+        details: String::new()
         }
     }
 }
@@ -207,14 +203,19 @@ impl State {
         Self {
             token: String::from("token here"),
             status: Status::Disconnected,
-            activity_type: Activities::Watching,
+            activity_type: Activities::Playing,
+            state: String::new(),
+            details: String::new(),
         }
     }
 }
 #[derive(Debug, PartialEq)]
 enum Activities{
     Playing, 
-    Watching
+    Listening,
+    Watching,
+    Competing
+
 }
 
 #[derive(Debug)]
