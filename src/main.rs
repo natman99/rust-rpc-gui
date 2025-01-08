@@ -11,14 +11,13 @@ struct Rpc {
 impl App for Rpc{
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame ) {
         CentralPanel::default().show(ctx, |ui|{
-            ui.label("Hello World");
-            // if ui.button("Hello there").clicked() {
-            //     println!("button clicked");
-            // }
-        
             let _response= client_buttons(ui, self);
             
             token_widget(ui, self);
+            
+            state_widget(ui, self);
+
+            details_widget(ui, self);
             
             activity_type_widget(ui, self);
 
@@ -33,18 +32,41 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
         
 
         let start_button = match &rpc.state.status {
-            Status::Connected { client } =>  ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::DARK_BLUE))),
-            Status::Disconnected =>  ui.add_enabled(true, egui::Button::new(RichText::new("Start").color(Color32::DARK_BLUE))),
-            Status::Error { error: ErrorType::MissingToken } => ui.add_enabled(true, egui::Button::new(RichText::new("Start").color(Color32::DARK_BLUE))),
-            _  => ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::DARK_BLUE)))
+            Status::Connected { client } =>  ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
+            Status::Disconnected =>  ui.add_enabled(true, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
+            Status::Error { error: ErrorType::MissingToken } => ui.add_enabled(true, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
+            _  => ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::BLUE)))
         };
 
         let stop_button = match &rpc.state.status {
-            Status::Connected { client } =>  ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::DARK_RED))),
-            Status::Disconnected =>  ui.add_enabled(false, egui::Button::new(RichText::new("Stop").color(Color32::DARK_RED))),
-            Status::Error { error: ErrorType::MissingToken } => ui.add_enabled(false, egui::Button::new(RichText::new("Stop").color(Color32::DARK_RED))),
-            _  => ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::DARK_RED)))
+            Status::Connected { client } =>  ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
+            Status::Disconnected =>  ui.add_enabled(false, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
+            Status::Error { error: ErrorType::MissingToken } => ui.add_enabled(false, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
+            _  => ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::RED)))
         };
+
+        let color: Color32 = match rpc.state.status {
+            Status::Connected { client: _  } => Color32::GREEN,
+            // Status::Connecting => (),
+            // Status::Disconnected => (),
+            // Status::Disconnecting => (),
+            Status::Error { error: _ } => Color32::RED,
+            _ => Color32::GOLD
+
+        };
+
+        let text = match rpc.state.status {
+            Status::Connected { client: _  } => "Connected",
+            Status::Connecting => "Connecting",
+            Status::Disconnected => "Disconnected",
+            Status::Disconnecting => "Disconnecting",
+            Status::Error { error: ErrorType::MissingToken } => "Missing token",
+            Status::Error { error: _ } => "Error",
+            _ => "Unkown"
+
+        };
+
+        ui.label(RichText::new( format!("{text}")).color(color) );
 
 
         if start_button.clicked() {
@@ -86,13 +108,23 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                                 Activities::Watching => ActivityType::Watching,
                                 Activities::Competing => ActivityType::Competing
                             };
-        
-                            client.set_activity(activity::Activity::new()
-                                        .state("foo")
-                                        .details("bar")
-                                        .activity_type(chosen)
-                                        
-                                    ).expect("wow it broke");
+                            
+                            let activity = activity::Activity::new();
+                            
+                            let activity = match &rpc.state.details.trim().is_empty() {
+                                false => activity.details(&rpc.state.details),
+                                true => activity,
+                            };
+
+                            let activity = match &rpc.state.state.trim().is_empty() {
+                                false => activity.state(&rpc.state.state),
+                                true => activity,
+                            };
+
+                            let activity = activity.activity_type(chosen);
+                                                    
+                            client.set_activity(activity).expect("wow it broke");
+                            
                             rpc.state.status = Status::Connected { client };
                             println!("Started client");
                             //rpc.state.status = Status::Connected { client }
@@ -113,7 +145,6 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
             
             match &mut rpc.state.status {
                 Status::Connected {   client} => {
-                    
                     match client.close(){
                         Ok(_) => {
                             rpc.state.status = Status::Disconnected;
@@ -161,6 +192,25 @@ fn activity_type_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
    
 }
 
+fn state_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
+
+    ui.horizontal(|ui|{
+        ui.label("State");
+        ui.text_edit_singleline(&mut rpc.state.state)
+
+    });
+}
+
+fn details_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
+
+    ui.horizontal(|ui|{
+        ui.label("Details");
+        ui.text_edit_singleline(&mut rpc.state.details)
+
+    });
+}
+
+
 
 fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::Error>> {
 
@@ -168,6 +218,7 @@ fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::E
         rpc.state.status = Status::Error { error : ErrorType::MissingToken };
     };
     let client = DiscordIpcClient::new(&rpc.state.token);
+    
     match client {
         Ok (client) => Ok(client),
         Err(error) => Err(error)
