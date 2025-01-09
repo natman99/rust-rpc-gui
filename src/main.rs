@@ -1,6 +1,6 @@
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32};
 use discord_rich_presence::{activity::{self, ActivityType, Assets}, DiscordIpc, DiscordIpcClient};
-use std::{sync::mpsc::{self, Receiver, SendError, Sender, TryRecvError}, thread};
+use std::{sync::mpsc::{self, Receiver, Sender, TryRecvError}, thread};
 
 //use egui::frame;
 
@@ -67,7 +67,7 @@ enum Status{
 #[derive(Debug)]
 enum ErrorType {
     MissingToken,
-    Unkown,
+    _Unkown,
     //None
 }
 
@@ -254,7 +254,7 @@ fn start_client(token: String) -> Option<DiscordIpcClient> {
 
     let client = match client {
         Ok(mut client) => {
-            client.connect();
+            let _ = client.connect();
             Ok(client)
         },
         Err(err ) =>  Err(err)
@@ -286,8 +286,8 @@ fn set_client_status(client: &mut DiscordIpcClient, rpc: &mut Rpc ){
     
     let activity = activity::Activity::new();
 
-    let assets = Assets::new();
-    let mut assets_filled = false;
+    //let assets = Assets::new();
+    let assets = (Assets::new(), false);
     
     let activity = match &rpc.state.details.trim().is_empty() {
         false => activity.details(&rpc.state.details),
@@ -300,25 +300,35 @@ fn set_client_status(client: &mut DiscordIpcClient, rpc: &mut Rpc ){
     };
 
     let assets = match &rpc.state.large_img.trim().is_empty() {
-        false => {
-            assets_filled = true;
-            assets.large_image(&rpc.state.large_img)}
-            ,
+        false => (assets.0.large_image(&rpc.state.large_img), true),
         true => assets,
     };
 
-    let assets = match &rpc.state.large_img.trim().is_empty() {
-        false => {
-            assets_filled = true;
-            assets.large_image(&rpc.state.large_img)}
-            ,
+    let assets = match &rpc.state.large_img_text.trim().is_empty() {
+        false => (assets.0.large_text(&rpc.state.large_img_text), true),
         true => assets,
     };
+
+    let assets = match &rpc.state.small_img.trim().is_empty() {
+        false => (assets.0.small_image(&rpc.state.small_img), true),
+        true => assets,
+    };
+
+    let assets = match &rpc.state.small_img_text.trim().is_empty() {
+        false => (assets.0.small_text(&rpc.state.small_img_text), true),
+        true => assets,
+    };
+
 
     
     let activity = activity.activity_type(chosen);
     
-    let activity = activity.assets(assets);
+    let activity = match assets.1 {
+        true => activity.assets(assets.0),
+        false => activity,
+    };
+
+    
 
     client.set_activity(activity).expect("wow it broke");
     
@@ -376,9 +386,9 @@ fn details_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 fn large_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
-        ui.label("Large image");
-        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.large_img));
         ui.label("Large image key");
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.large_img));
+        ui.label("Large image text");
         ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.large_img_text))
 
     });
@@ -387,9 +397,9 @@ fn large_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 fn small_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
-        ui.label("Small image");
+        ui.label("Small imagekey");
         ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.small_img));
-        ui.label("Small image key");
+        ui.label("Small image text");
         ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.small_img_text))
 
     });
