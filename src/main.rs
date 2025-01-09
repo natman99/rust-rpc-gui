@@ -1,6 +1,6 @@
-use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
-use discord_rich_presence::{activity::{self, ActivityType}, DiscordIpc, DiscordIpcClient};
-use std::thread;
+use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32};
+use discord_rich_presence::{activity::{self, ActivityType, Assets}, DiscordIpc, DiscordIpcClient};
+
 //use egui::frame;
 
 #[derive(Default)]
@@ -19,6 +19,10 @@ impl App for Rpc{
 
             details_widget(ui, self);
             
+            large_img_widget(ui, self);
+
+            small_img_widget(ui, self);
+            
             activity_type_widget(ui, self);
 
             //ui_counter(ui, );
@@ -32,14 +36,14 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
         
 
         let start_button = match &rpc.state.status {
-            Status::Connected { client } =>  ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
+            Status::Connected { client: _ } =>  ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
             Status::Disconnected =>  ui.add_enabled(true, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
             Status::Error { error: ErrorType::MissingToken } => ui.add_enabled(true, egui::Button::new(RichText::new("Start").color(Color32::BLUE))),
             _  => ui.add_enabled(false, egui::Button::new(RichText::new("Start").color(Color32::BLUE)))
         };
 
         let stop_button = match &rpc.state.status {
-            Status::Connected { client } =>  ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
+            Status::Connected { client: _ } =>  ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
             Status::Disconnected =>  ui.add_enabled(false, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
             Status::Error { error: ErrorType::MissingToken } => ui.add_enabled(false, egui::Button::new(RichText::new("Stop").color(Color32::RED))),
             _  => ui.add_enabled(true, egui::Button::new(RichText::new("Stop").color(Color32::RED)))
@@ -47,9 +51,6 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
         let color: Color32 = match rpc.state.status {
             Status::Connected { client: _  } => Color32::GREEN,
-            // Status::Connecting => (),
-            // Status::Disconnected => (),
-            // Status::Disconnecting => (),
             Status::Error { error: _ } => Color32::RED,
             _ => Color32::GOLD
 
@@ -59,7 +60,6 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
             Status::Connected { client: _  } => "Connected",
             Status::Connecting => "Connecting",
             Status::Disconnected => "Disconnected",
-            Status::Disconnecting => "Disconnecting",
             Status::Error { error: ErrorType::MissingToken } => "Missing token",
             Status::Error { error: _ } => "Error",
             _ => "Unkown"
@@ -77,7 +77,7 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                 return;
             } else{
                 match &rpc.state.status {
-                    Status::Error { error } => {
+                    Status::Error { error: _ } => {
                         
                         rpc.state.status = Status::Disconnected
                         
@@ -110,6 +110,9 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                             };
                             
                             let activity = activity::Activity::new();
+
+                            let assets = Assets::new();
+                            let mut assets_filled = false;
                             
                             let activity = match &rpc.state.details.trim().is_empty() {
                                 false => activity.details(&rpc.state.details),
@@ -121,8 +124,26 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                                 true => activity,
                             };
 
+                            let assets = match &rpc.state.large_img.trim().is_empty() {
+                                false => {
+                                    assets_filled = true;
+                                    assets.large_image(&rpc.state.large_img)}
+                                    ,
+                                true => assets,
+                            };
+
+                            let assets = match &rpc.state.large_img.trim().is_empty() {
+                                false => {
+                                    assets_filled = true;
+                                    assets.large_image(&rpc.state.large_img)}
+                                    ,
+                                true => assets,
+                            };
+
+                            
                             let activity = activity.activity_type(chosen);
-                                                    
+                            let activity = activity.assets(assets);
+
                             client.set_activity(activity).expect("wow it broke");
                             
                             rpc.state.status = Status::Connected { client };
@@ -210,6 +231,28 @@ fn details_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
     });
 }
 
+fn large_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
+
+    ui.horizontal(|ui|{
+        ui.label("Large image");
+        ui.text_edit_singleline(&mut rpc.state.large_img);
+        ui.label("Large image key");
+        ui.text_edit_singleline(&mut rpc.state.large_img_text);
+
+    });
+}
+
+fn small_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
+
+    ui.horizontal(|ui|{
+        ui.label("Small image");
+        ui.text_edit_singleline(&mut rpc.state.small_img);
+        ui.label("Small image key");
+        ui.text_edit_singleline(&mut rpc.state.small_img_text);
+
+    });
+}
+
 
 
 fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::Error>> {
@@ -233,7 +276,11 @@ struct State {
     status: Status,
     activity_type: Activities,
     state: String,
-    details: String
+    details: String,
+    large_img: String,
+    large_img_text: String,
+    small_img: String,
+    small_img_text: String
 }
 
 impl Default for State{
@@ -243,23 +290,15 @@ impl Default for State{
         status: Status::Disconnected,
         activity_type : Activities::Playing,
         state: String::new(),
-        details: String::new()
+        details: String::new(),
+        large_img: String::new(),
+        large_img_text: String::new(),
+        small_img: String::new(),
+        small_img_text: String::new(),
         }
     }
 }
 
-
-impl State {
-    pub fn _new() -> Self {
-        Self {
-            token: String::from("token here"),
-            status: Status::Disconnected,
-            activity_type: Activities::Playing,
-            state: String::new(),
-            details: String::new(),
-        }
-    }
-}
 #[derive(Debug, PartialEq)]
 enum Activities{
     Playing, 
@@ -274,7 +313,7 @@ enum Status{
     Connected { client: DiscordIpcClient },
     Disconnected,
     Connecting,
-    Disconnecting,
+    //Disconnecting,
     Error { error: ErrorType},
 }
 #[derive(Debug)]
