@@ -26,6 +26,7 @@ struct State {
     small_img: String,
     small_img_text: String,
     thread_handler: ThreadHandler,
+    gui_unlocked: bool,
 }
 
 impl Default for State{
@@ -41,6 +42,7 @@ impl Default for State{
         small_img: String::new(),
         small_img_text: String::new(),
         thread_handler: ThreadHandler::Inactive,
+        gui_unlocked: true,
         }
     }
 }
@@ -107,6 +109,7 @@ impl App for Rpc{
                 Ok(mut client) => self.state.status = {
                     println!("Recived content {:?}", &client);
                     set_client_status(&mut client, self);
+                    self.state.gui_unlocked = false;
                     Status::Connected { client }
                 },
                 Err(_err ) => (),
@@ -115,6 +118,7 @@ impl App for Rpc{
             token_widget(ui, self);
             
             state_widget(ui, self);
+            
 
             details_widget(ui, self);
             
@@ -227,7 +231,7 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                     match client.close(){
                         Ok(_) => {
                             rpc.state.status = Status::Disconnected;
-                            
+                            rpc.state.gui_unlocked = true;
                             println!("Client closed");
                         },
                         Err(err) => panic!("{err}") 
@@ -326,12 +330,11 @@ fn set_client_status(client: &mut DiscordIpcClient, rpc: &mut Rpc ){
 
 
 fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
-
     match rpc.state.status {
-        Status::Disconnected => ui.text_edit_singleline(&mut rpc.state.token),
+        Status::Disconnected => ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.token)),
         Status::Error { error: ErrorType::MissingToken } => ui.text_edit_singleline(&mut rpc.state.token).highlight(),
-        _ => ui.text_edit_singleline(&mut rpc.state.token)
-
+        _ => ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.token)),
+        
     }
 
     //ui.text_edit_singleline(&mut rpc.state.token).on_hover_cursor(CursorIcon::NotAllowed);
@@ -349,14 +352,14 @@ fn activity_type_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
         
     }
 );
-   
+  
 }
 
 fn state_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
         ui.label("State");
-        ui.text_edit_singleline(&mut rpc.state.state)
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.state))
 
     });
 }
@@ -365,7 +368,7 @@ fn details_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
         ui.label("Details");
-        ui.text_edit_singleline(&mut rpc.state.details)
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.details))
 
     });
 }
@@ -374,9 +377,9 @@ fn large_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
         ui.label("Large image");
-        ui.text_edit_singleline(&mut rpc.state.large_img);
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.large_img));
         ui.label("Large image key");
-        ui.text_edit_singleline(&mut rpc.state.large_img_text);
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.large_img_text))
 
     });
 }
@@ -385,9 +388,9 @@ fn small_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     ui.horizontal(|ui|{
         ui.label("Small image");
-        ui.text_edit_singleline(&mut rpc.state.small_img);
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.small_img));
         ui.label("Small image key");
-        ui.text_edit_singleline(&mut rpc.state.small_img_text);
+        ui.add_enabled(rpc.state.gui_unlocked, egui::TextEdit::singleline(&mut rpc.state.small_img_text))
 
     });
 }
