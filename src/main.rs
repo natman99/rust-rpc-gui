@@ -1,6 +1,6 @@
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32, egui::CursorIcon};
 use discord_rich_presence::{activity::{self, ActivityType}, DiscordIpc, DiscordIpcClient};
-
+use std::thread;
 //use egui::frame;
 
 #[derive(Default)]
