@@ -1,5 +1,6 @@
 use eframe::{egui::CentralPanel, App, NativeOptions, egui::RichText, egui::Color32};
 use discord_rich_presence::{activity::{self, ActivityType, Assets}, DiscordIpc, DiscordIpcClient};
+use std::{sync::mpsc::{self, Receiver, SendError, Sender, TryRecvError}, thread};
 
 //use egui::frame;
 
@@ -7,11 +8,109 @@ use discord_rich_presence::{activity::{self, ActivityType, Assets}, DiscordIpc, 
 struct Rpc {
     state: State,
 } 
+#[derive(Debug)]
+enum ThreadHandler{
+    Inactive,
+    Active {tx: Sender<DiscordIpcClient>, rx: Receiver<DiscordIpcClient> }
+}
+
+#[derive(Debug)]
+struct State {
+    token: String,
+    status: Status,
+    activity_type: Activities,
+    state: String,
+    details: String,
+    large_img: String,
+    large_img_text: String,
+    small_img: String,
+    small_img_text: String,
+    thread_handler: ThreadHandler,
+}
+
+impl Default for State{
+    fn default() -> Self {
+        Self {
+        token: String::new(),
+        status: Status::Disconnected,
+        activity_type : Activities::Playing,
+        state: String::new(),
+        details: String::new(),
+        large_img: String::new(),
+        large_img_text: String::new(),
+        small_img: String::new(),
+        small_img_text: String::new(),
+        thread_handler: ThreadHandler::Inactive,
+        }
+    }
+}
+
+#[derive(Debug, PartialEq)]
+enum Activities{
+    Playing, 
+    Listening,
+    Watching,
+    Competing
+
+}
+
+#[derive(Debug)]
+enum Status{
+    Connected { client: DiscordIpcClient },
+    Disconnected,
+    Connecting,
+    //Disconnecting,
+    Error { error: ErrorType},
+}
+#[derive(Debug)]
+enum ErrorType {
+    MissingToken,
+    Unkown,
+    //None
+}
+
+impl Rpc {
+    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
+        // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
+        // Restore app state using cc.storage (requires the "persistence" feature).
+        // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
+        // for e.g. egui::PaintCallback.
+        Self::default()
+    }
+}
+
 
 impl App for Rpc{
     fn update(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame ) {
         CentralPanel::default().show(ctx, |ui|{
             let _response= client_buttons(ui, self);
+
+            match self.state.thread_handler {
+                ThreadHandler::Inactive => {
+                    let (tx, rx) = mpsc::channel();
+                    self.state.thread_handler = ThreadHandler::Active { tx, rx }
+                },
+                _ => (),
+            }
+
+            let maybe_client = match self.state.status{
+                Status::Connecting => {
+                    match &mut self.state.thread_handler {
+                        ThreadHandler::Active { tx: _, rx } => rx.try_recv(),
+                        _ => Err(TryRecvError::Empty),
+                    }
+                },
+                _ => Err(TryRecvError::Empty)
+            };
+            
+            match maybe_client {
+                Ok(mut client) => self.state.status = {
+                    println!("Recived content {:?}", &client);
+                    set_client_status(&mut client, self);
+                    Status::Connected { client }
+                },
+                Err(_err ) => (),
+            }
             
             token_widget(ui, self);
             
@@ -62,7 +161,7 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
             Status::Disconnected => "Disconnected",
             Status::Error { error: ErrorType::MissingToken } => "Missing token",
             Status::Error { error: _ } => "Error",
-            _ => "Unkown"
+            //_ => "Unkown"
 
         };
 
@@ -70,7 +169,7 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
 
         if start_button.clicked() {
-            //dbg!(&rpc.state.status);
+            // check token validity
             if rpc.state.token.trim() == "" {
                 rpc.state.status = Status::Error { error: ErrorType::MissingToken };
                 println!("missing token. setting status");
@@ -92,67 +191,26 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
                 Status::Disconnected => {
                     rpc.state.status = Status::Connecting;
                     //dbg!(&rpc.state.status);
-                    match start_client(rpc){
-                        Ok(mut client) => {
-                            
-                            match client.connect() {
-                                Ok(_) => (),
-                                Err(_) => { let _ = client.close(); ()}
-        
-                            }
-                            
-
-                            let chosen = match &rpc.state.activity_type {
-                                Activities::Playing => ActivityType::Playing,
-                                Activities::Listening => ActivityType::Listening,
-                                Activities::Watching => ActivityType::Watching,
-                                Activities::Competing => ActivityType::Competing
-                            };
-                            
-                            let activity = activity::Activity::new();
-
-                            let assets = Assets::new();
-                            let mut assets_filled = false;
-                            
-                            let activity = match &rpc.state.details.trim().is_empty() {
-                                false => activity.details(&rpc.state.details),
-                                true => activity,
-                            };
-
-                            let activity = match &rpc.state.state.trim().is_empty() {
-                                false => activity.state(&rpc.state.state),
-                                true => activity,
-                            };
-
-                            let assets = match &rpc.state.large_img.trim().is_empty() {
-                                false => {
-                                    assets_filled = true;
-                                    assets.large_image(&rpc.state.large_img)}
-                                    ,
-                                true => assets,
-                            };
-
-                            let assets = match &rpc.state.large_img.trim().is_empty() {
-                                false => {
-                                    assets_filled = true;
-                                    assets.large_image(&rpc.state.large_img)}
-                                    ,
-                                true => assets,
-                            };
-
-                            
-                            let activity = activity.activity_type(chosen);
-                            let activity = activity.assets(assets);
-
-                            client.set_activity(activity).expect("wow it broke");
-                            
-                            rpc.state.status = Status::Connected { client };
-                            println!("Started client");
-                            //rpc.state.status = Status::Connected { client }
+                    let token = rpc.state.token.clone();
+                    match &rpc.state.thread_handler {
+                        ThreadHandler::Active { tx, rx: _ } => {
+                            let tx1 = tx.clone();
+                            thread::spawn(move ||{
+                                let e = start_client(token);
+                                println!("Client created in thread!");
+                                let _ = match e {
+                                    Some(client ) => {
+                                        let _ = tx1.send(client);
+                                        ()
+                                    },
+                                    None => (),
+                                };
+                            });
                         },
-                        
-                        Err(_error) => rpc.state.status = Status::Error { error: ErrorType::Unkown }
+                        _ => ()
                     }
+                    
+                    
                     
 
                 },
@@ -184,6 +242,87 @@ fn client_buttons(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
     
 }
+
+fn start_client(token: String) -> Option<DiscordIpcClient> {
+
+    
+    let client = DiscordIpcClient::new(&token);
+
+    let client = match client {
+        Ok(mut client) => {
+            client.connect();
+            Ok(client)
+        },
+        Err(err ) =>  Err(err)
+    };
+
+    // match client.connect() {
+    //     Ok() => (),
+    //     Err(err: _) => return None
+    // }
+    match client{
+        Ok(client) => Some(client),
+        _ => None
+    }
+    
+    
+    
+    
+}
+
+
+fn set_client_status(client: &mut DiscordIpcClient, rpc: &mut Rpc ){
+
+    let chosen = match &rpc.state.activity_type {
+        Activities::Playing => ActivityType::Playing,
+        Activities::Listening => ActivityType::Listening,
+        Activities::Watching => ActivityType::Watching,
+        Activities::Competing => ActivityType::Competing
+    };
+    
+    let activity = activity::Activity::new();
+
+    let assets = Assets::new();
+    let mut assets_filled = false;
+    
+    let activity = match &rpc.state.details.trim().is_empty() {
+        false => activity.details(&rpc.state.details),
+        true => activity,
+    };
+
+    let activity = match &rpc.state.state.trim().is_empty() {
+        false => activity.state(&rpc.state.state),
+        true => activity,
+    };
+
+    let assets = match &rpc.state.large_img.trim().is_empty() {
+        false => {
+            assets_filled = true;
+            assets.large_image(&rpc.state.large_img)}
+            ,
+        true => assets,
+    };
+
+    let assets = match &rpc.state.large_img.trim().is_empty() {
+        false => {
+            assets_filled = true;
+            assets.large_image(&rpc.state.large_img)}
+            ,
+        true => assets,
+    };
+
+    
+    let activity = activity.activity_type(chosen);
+    
+    let activity = activity.assets(assets);
+
+    client.set_activity(activity).expect("wow it broke");
+    
+    println!("Started client");
+    //rpc.state.status = Status::Connected { client }
+}
+    
+
 
 
 fn token_widget(ui: &mut egui::Ui, rpc: &mut Rpc) -> egui::Response{
@@ -255,84 +394,9 @@ fn small_img_widget(ui: &mut egui::Ui, rpc: &mut Rpc) {
 
 
 
-fn start_client(rpc: &mut Rpc) -> Result<DiscordIpcClient, Box<dyn std::error::Error>> {
 
-    if &rpc.state.token == "".to_string().trim(){
-        rpc.state.status = Status::Error { error : ErrorType::MissingToken };
-    };
-    let client = DiscordIpcClient::new(&rpc.state.token);
-    
-    match client {
-        Ok (client) => Ok(client),
-        Err(error) => Err(error)
-    }
-        
-    
-}
 
-#[derive(Debug)]
-struct State {
-    token: String,
-    status: Status,
-    activity_type: Activities,
-    state: String,
-    details: String,
-    large_img: String,
-    large_img_text: String,
-    small_img: String,
-    small_img_text: String
-}
 
-impl Default for State{
-    fn default() -> Self {
-        Self {
-        token: String::new(),
-        status: Status::Disconnected,
-        activity_type : Activities::Playing,
-        state: String::new(),
-        details: String::new(),
-        large_img: String::new(),
-        large_img_text: String::new(),
-        small_img: String::new(),
-        small_img_text: String::new(),
-        }
-    }
-}
-
-#[derive(Debug, PartialEq)]
-enum Activities{
-    Playing, 
-    Listening,
-    Watching,
-    Competing
-
-}
-
-#[derive(Debug)]
-enum Status{
-    Connected { client: DiscordIpcClient },
-    Disconnected,
-    Connecting,
-    //Disconnecting,
-    Error { error: ErrorType},
-}
-#[derive(Debug)]
-enum ErrorType {
-    MissingToken,
-    Unkown,
-    //None
-}
-
-impl Rpc {
-    fn new(_cc: &eframe::CreationContext<'_>) -> Self {
-        // Customize egui here with cc.egui_ctx.set_fonts and cc.egui_ctx.set_visuals.
-        // Restore app state using cc.storage (requires the "persistence" feature).
-        // Use the cc.gl (a glow::Context) to create graphics shaders and buffers that you can use
-        // for e.g. egui::PaintCallback.
-        //cc.storage.expect("idk brokey");
-        Self::default()
-    }
-}
 
 fn main() -> eframe::Result {
     let win_option = NativeOptions::default();
